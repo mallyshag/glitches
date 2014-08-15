@@ -63,3 +63,5 @@ Session.vim
 # Project
 *.jpg
 *.png
+*.gif
+output

@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 
-from PIL import Image
+from PIL import Image, ImageDraw
 import math
 from operator import itemgetter
 from scipy.cluster.vq import vq
 import numpy as np
+import colorsys
 
+
+# Median-cut algorithm code
 
 class Box(object):
     def __init__(self, colours=None):
@@ -102,6 +105,8 @@ def median_cut(image, num_colours):
     return colours
 
 
+# End of median-cut algorithm code
+
 # Adapted from
 # http://glowingpython.blogspot.co.uk/2012/07/color-quantization.html
 def recolour(image, pal):
@@ -110,3 +115,47 @@ def recolour(image, pal):
     quant, _ = vq(im_array, palette_array)
     idx = np.reshape(quant, (image.size[1], image.size[0]))
     return Image.fromarray(palette_array[idx])
+
+
+# Palette generation, manipulation, visualization.
+
+
+def mono_palette(num_colours):
+    step = 255 / (num_colours - 1)
+    palette = [i * step for i in range(num_colours)]
+    palette = [(l, l, l) for l in palette]
+    return palette
+
+
+def colour_palette(colour_a, colour_b, steps):
+    from_colour = colorsys.rgb_to_hsv(*colour_a)
+    to_colour = colorsys.rgb_to_hsv(*colour_b)
+
+    hstep = (to_colour[0] - from_colour[0]) / (steps - 1)
+    sstep = (to_colour[1] - from_colour[1]) / (steps - 1)
+    vstep = (to_colour[2] - from_colour[2]) / (steps - 1)
+
+    if to_colour[0] == 0 and to_colour[1] == 0:
+        hstep =  0;
+    
+    palette = []
+    for i in range(steps):
+        h = from_colour[0] + i * hstep
+        s = from_colour[1] + i * sstep
+        v = from_colour[2] + i * vstep
+        palette.append(colorsys.hsv_to_rgb(h, s, v))
+    return palette
+
+
+def swatch(palette, fname):
+    image = Image.new("RGB", (32 * len(palette), 64), "magenta")
+
+    draw = ImageDraw.Draw(image)
+    
+    for i in range(len(palette)):
+        colour = palette[i]
+        draw.rectangle((i * 32, 0, (i + 1) * 32, 64), fill='rgb(%d,%d,%d)' % colour)
+
+    # Save image
+    image.save(fname)
+
