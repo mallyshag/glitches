@@ -136,8 +136,8 @@ def colour_palette(colour_a, colour_b, steps):
     vstep = (to_colour[2] - from_colour[2]) / (steps - 1)
 
     if to_colour[0] == 0 and to_colour[1] == 0:
-        hstep =  0;
-    
+        hstep = 0
+
     palette = []
     for i in range(steps):
         h = from_colour[0] + i * hstep
@@ -151,11 +151,11 @@ def swatch(palette, fname):
     image = Image.new("RGB", (32 * len(palette), 64), "magenta")
 
     draw = ImageDraw.Draw(image)
-    
+
     for i in range(len(palette)):
         colour = palette[i]
-        draw.rectangle((i * 32, 0, (i + 1) * 32, 64), fill='rgb(%d,%d,%d)' % colour)
+        draw.rectangle((i * 32, 0, (i + 1) * 32, 64),
+                       fill='rgb(%d,%d,%d)' % colour)
 
     # Save image
     image.save(fname)
-

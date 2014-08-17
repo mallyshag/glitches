@@ -4,43 +4,83 @@ from scipy.weave import converters
 from PIL import Image
 
 
-def floyd_steinberg_1bit(image):
-    """ Floyd-Steinberg dithering using 1-bit colour. """
+def floyd_steinberg_mono(image, palette=None):
+    """ Monochrome Floyd-Steinberg dithering """
+    if palette is None:
+        pal_array = np.array([])
+        nc = 0  # noqa
+    else:
+        pal_array = np.array(palette, dtype=np.double)
+        nc = pal_array.shape[0]  # noqa
+
     im_array = np.array(image.convert('L'), dtype=np.double)
     ny, nx = im_array.shape  # noqa
 
     code = """
-    double col;
-    double quant_error;
+    int col_idx;
+    double nearest, tmp, dist;
+    double quant_error, old_value, new_value;
     for (int y = 0; y < ny; y++)
     {
         for (int x = 0; x < nx; x++)
         {
-            col = im_array(y, x) <= 128? 0 : 255;
+            // Clamp Colour
+            old_value = im_array(y, x);
+            old_value = old_value < 0 ? 0 : old_value;
+            old_value = old_value > 255 ? 255 : old_value;
+            im_array(y, x) = old_value;
 
-            quant_error = im_array(y, x) - col;
-            im_array(y, x) = col;
+            if (nc == 0)
+            {
+                new_value = im_array(y, x) <= 128? 0 : 255;
+            }
+            else
+            {
+                col_idx = -1;
+                nearest = -1;
 
+
+                // Find Nearest Colour
+                for (int c=0; c<nc; c++)
+                {
+                    dist = 0;
+                    tmp = im_array(y, x) - pal_array(c);
+                    dist += tmp * tmp;
+                    if (col_idx == -1 || dist < nearest)
+                    {
+                        col_idx = c;
+                        nearest = dist;
+                    }
+                }
+                new_value = pal_array(col_idx);
+            }
+
+            // Set colour
+            old_value = im_array(y, x);
+            quant_error = old_value - new_value;
+            im_array(y, x) = new_value;
+
+            // Error diffusion
             if (x < nx - 1)
             {
-                im_array(y, x + 1) += quant_error * (7.0/16.0);
+                im_array(y, x+1) += quant_error * (7.0/16.0);
             }
             if (y < ny - 1)
             {
                 if (x > 0)
                 {
-                    im_array(y + 1, x - 1) += quant_error * (3.0/16.0);
+                    im_array(y+1, x-1) += quant_error * (3.0/16.0);
                 }
-                im_array(y + 1, x) += quant_error * (5.0/16.0);
+                im_array(y+1, x) += quant_error * (5.0/16.0);
                 if (x < nx - 1)
                 {
-                    im_array(y + 1, x + 1) += quant_error * (1.0/16.0);
+                    im_array(y+1, x+1) += quant_error * (1.0/16.0);
                 }
             }
         }
     }
     """
-    inline(code, ['im_array', 'nx', 'ny'],
+    inline(code, ['im_array', 'pal_array', 'nx', 'ny', 'nc'],
            type_converters=converters.blitz)
 
     return Image.fromarray(im_array.astype(np.uint8))
@@ -130,8 +170,8 @@ def floyd_steinberg(image, palette=None, mode="RGB"):
         if palette is None:
             return None
         return floyd_steinberg_rgb(image, palette)
-    elif mode == "1":
-        return floyd_steinberg_1bit(image)
+    elif mode == "MONO":
+        return floyd_steinberg_mono(image, palette)
     else:
         return None
 
@@ -161,83 +201,41 @@ tm8x8 = [1, 49, 13, 61, 4, 52, 16, 64,
          43, 27, 39, 23, 42, 26, 38, 22]
 
 
-def bayer(image, palette):
-    # Create Image Array
-    im_array = np.array(image.convert('RGB'), dtype=np.double)
-    pal_array = np.array(palette, dtype=np.double)
+def bayer_mono(image, palette=None, matrix=4):
+    if matrix == 2:
+        bayer = tm2x2
+    elif matrix == 3:
+        bayer = tm3x3
+    elif matrix == 4:
+        bayer = tm4x4
+    elif matrix == 8:
+        bayer = tm8x8
+    else:
+        return None
 
-    # Resize Bayer Matrix to Size of Array
-    bmatrix = np.array(bayer, dtype=np.double).reshape((4, 4))
-    #bmatrix = np.array(bayer).reshape((8, 8))
-    #bmatrix *= 255.0/((len(bayer) + 1) * len(palette))
-    bmatrix *= 255.0/17.0
-    bmatrix /= 4.0
-    print bmatrix
-    bmatrix = np.tile(bmatrix, ((im_array.shape[0] / bmatrix.shape[0]) + 1,
-                                (im_array.shape[0] / bmatrix.shape[1]) + 1))
-    bmatrix = bmatrix[:im_array.shape[0], :im_array.shape[1]]
+    if palette is None:
+        pal_array = np.array([])
+        nc = 2  # noqa
+        bw = True  # noqa
+    else:
+        pal_array = np.array(palette, dtype=np.double)
+        nc = pal_array.shape[0]  # noqa
+        bw = False  # noqa
 
-    # Add Bayer Matrix
-    im_array[:,:,0] += bmatrix
-    im_array[:,:,1] += bmatrix
-    im_array[:,:,2] += bmatrix
-
-    # Find nearest pixels
-    ny, nx, _ = im_array.shape  # noqa
-    nc = pal_array.shape[0]  # noqa
-
-    code = """
-    int col_idx;
-    double nearest, tmp, dist, col;
-    for (int y = 0; y < ny; y++)
-    {
-        for (int x = 0; x < nx; x++)
-        {
-            col_idx = -1;
-            nearest = -1;
-
-            // Find Nearest Colour
-            for (int c=0; c<nc; c++)
-            {
-                dist = 0;
-                for (int band=0; band < 3; band++)
-                {
-                    col = im_array(y, x, band);
-                    col = col < 0? 0 : col;
-                    col = col > 255? 255: col;
-                    tmp = col - pal_array(c, band);
-                    dist += tmp * tmp;
-                }
-                if (col_idx == -1 || dist < nearest)
-                {
-                    col_idx = c;
-                    nearest = dist;
-                }
-            }
-
-            // Set colour
-            for (int band = 0; band < 3; band++)
-            {
-                im_array(y, x, band) = pal_array(col_idx, band);
-            }
-        }
-    }
-    """
-    inline(code, ['im_array', 'pal_array', 'nx', 'ny', 'nc'],
-           type_converters=converters.blitz)
-    return Image.fromarray(im_array.astype(np.uint8))
-
-
-def bayer_1(image, palette):
-    # Create Image Array
     im_array = np.array(image.convert('L'), dtype=np.double)
 
-    # Resize Bayer Matrix to Size of Array
-    #bmatrix = np.array(bayer, dtype=np.double).reshape((4, 4))
-    bmatrix = np.array(bayer).reshape((8, 8))
-    bmatrix *= 255.0/(len(bayer) + 1.0)
+    # Calculate level gap
+    gap = 255.0 / (nc - 1)
+
+    # Setup bayer matrix
+    bmatrix = np.array(bayer, dtype=np.double).reshape((matrix, matrix))
+    bmatrix *= gap
+    bmatrix /= len(bayer)
+    bmatrix -= gap / 2.0
+
+    # Tile bayer matrix
     bmatrix = np.tile(bmatrix, ((im_array.shape[0] / bmatrix.shape[0]) + 1,
-                                (im_array.shape[0] / bmatrix.shape[1]) + 1))
+                                (im_array.shape[1] / bmatrix.shape[1]) + 1))
     bmatrix = bmatrix[:im_array.shape[0], :im_array.shape[1]]
 
     # Add Bayer Matrix
@@ -247,17 +245,47 @@ def bayer_1(image, palette):
     ny, nx = im_array.shape  # noqa
 
     code = """
+    int col_idx;
+    double nearest, tmp, dist;
     double col;
     for (int y = 0; y < ny; y++)
     {
         for (int x = 0; x < nx; x++)
         {
-            col = floor(im_array(y, x) / 2.0);
-            col = col < 129 ? 0 : 255; 
+            if (bw == true)
+            {
+                col = im_array(y, x);
+                col = col < 128 ? 0 : 255;
+            }
+            else
+            {
+                col = im_array(y, x);
+                col = col > 255? 255 : col;
+                col = col < 0? 0: col;
+
+                col_idx = -1;
+                nearest = -1;
+
+                // Find Nearest Colour
+                for (int c=0; c<nc; c++)
+                {
+                    dist = 0;
+                    tmp = col - pal_array(c);
+                    dist += tmp * tmp;
+                    if (col_idx == -1 || dist < nearest)
+                    {
+                        col_idx = c;
+                        nearest = dist;
+                    }
+                }
+                col = pal_array(col_idx);
+            }
             im_array(y, x) = col;
         }
     }
     """
-    inline(code, ['im_array', 'nx', 'ny'],
+    inline(code, ['im_array', 'pal_array', 'nx', 'ny', 'nc', 'bw'],
            type_converters=converters.blitz)
     return Image.fromarray(im_array.astype(np.uint8))
+
+bayer = bayer_mono
