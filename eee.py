@@ -19,12 +19,47 @@ def comp_colours(spread=0.1, c_min=0.2, c_max=0.4):
     return (a, b, c, d)
 
 
+def resize(image, w, h, bgcolor="black"):
+    ow, oh = image.size
+    if w == -1 and h == -1:
+        return image
+    elif w == -1 and h != -1:
+        w = ow * (float(h) / float(oh))
+        w = int(w)
+        return image.resize((w, h))
+    elif w != -1 and h == -1:
+        h = oh * (float(w) / float(ow))
+        h = int(h)
+        return image.resize((w, h))
+    else:
+        # Fit longest axis
+        if ow <= oh:
+            nh = h
+            nw = (float(nh) / float(oh)) * ow
+            nw = int(nw)
+            im2 = image.resize((nw, nh))
+            wdiff = int((w - nw) / 2.0)
+            im = Image.new("RGB", (w, h), bgcolor)
+            im.paste(im2, (wdiff, 0))
+        else:
+            nw = w
+            nh = (float(nw) / float(ow)) * oh
+            nh = int(nh)
+            im2 = image.resize((nw, nh))
+            hdiff = int((h - nh) / 2.0)
+            im = Image.new("RGB", (w, h), bgcolor)
+            im.paste(im2, (0, hdiff))
+        return im
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("inage", metavar='INPUT', type=str)
     parser.add_argument("outage", metavar='OUTPUT', type=str)
     parser.add_argument("-p", "--palette", type=str, default="AUTO")
     parser.add_argument("-d", "--dither", type=str, default="BAYER")
+    parser.add_argument("-iw", "--width", type=int, default=-1)
+    parser.add_argument("-ih", "--height", type=int, default=-1)
     args = parser.parse_args()
 
     image = Image.open(args.inage)
@@ -47,6 +82,10 @@ def main():
     else:
         out_palette = gl_c.GAMENIPPER
     num_colours = len(out_palette)
+
+    # Resize Image
+    bgcolor = "rgb(%d, %d, %d)" % out_palette[0]
+    image = resize(image, args.width, args.height)
     
     # Prequantize
     image = gl_c.quantize(image, gl_c.mono_palette(num_colours * 4))
