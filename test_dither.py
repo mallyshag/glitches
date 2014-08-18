@@ -21,7 +21,7 @@ def main():
     outim = floyd_steinberg(image, mode="MONO")
     outim.save("floyd_BW.png")
 
-    m = 8
+    m = 2
 
     outim = bayer(image, matrix=m)
     outim.save("bayer_BW.png")

@@ -184,7 +184,10 @@ def colour_palette(colour_a, colour_b, steps):
 
 def hue_palette(hues, low=32, high=255, sat=1.0):
     """ Generate saturated palette using hues. """
-    step = (high - low) / (len(hues) - 1)
+    if len(hues) == 1:
+        step = 0
+    else:
+        step = (high - low) / (len(hues) - 1)
     return [colorsys.hsv_to_rgb(hues[i], sat, low + (i * step))
             for i in range(len(hues))]
 

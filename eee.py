@@ -1,77 +1,72 @@
 #!/usr/bin/env python
 
-from glitches.dithering import bayer
-from glitches.colour import mono_palette, hue_palette, replace_colours
-from glitches.colour import quantize, swatch
+import glitches.dithering as gl_d
+import glitches.colour as gl_c
 from PIL import Image
 import random
+from argparse import ArgumentParser
 
 
 def random_hues(num):
-    return [random.random() for i in range(num)]
+    return gl_c.hue_palette([random.random() for i in range(num)])
 
 
-def comp_colours(num):
-    r = True
-    last_hue = -1
-    hues = []
-    for i in range(num):
-        if r:
-            r = False
-            last_hue = random.random()
-            hues.append(random.random())
-        else:
-            r = True
-            hues.append((last_hue + 0.5) % 1.0)
-    return hues
-
-
-def comp_4():
+def comp_colours(spread=0.1, c_min=0.2, c_max=0.4):
     a = random.random()
-    b = random.random()
-    c = (b + 0.5) % 1.0
-    d = (a + 0.5) % 1.0
-    return (a, b, c, d)
-
-
-def comp_4b():
-    a = random.random()
-    b = (a + random.uniform(-0.2, 0.2)) % 1.0
-    c = (a + 0.5) % 1.0
-    d = (c + random.uniform(-0.2, 0.2)) % 1.0
-    return (a, b, c, d)
-
-
-def comp_4c():
-    a = random.random()
-    b = (a + random.uniform(-0.1, 0.1)) % 1.0
-    c = (b + random.uniform(-0.1, 0.1)) % 1.0
-    d = (b + random.uniform(0.2, 0.4)) % 1.0
+    b = (a + random.uniform(-spread, spread)) % 1.0
+    c = (b + random.uniform(-spread, spread)) % 1.0
+    d = (b + random.uniform(c_min, c_max)) % 1.0
     return (a, b, c, d)
 
 
 def main():
-    image = Image.open("test.jpg")
+    parser = ArgumentParser()
+    parser.add_argument("inage", metavar='INPUT', type=str)
+    parser.add_argument("outage", metavar='OUTPUT', type=str)
+    parser.add_argument("-p", "--palette", type=str, default="AUTO")
+    parser.add_argument("-d", "--dither", type=str, default="BAYER")
+    args = parser.parse_args()
+
+    image = Image.open(args.inage)
 
     # Create target palette
-    target_palette = hue_palette(comp_4c())
-    swatch(target_palette, "hues.png")
-    num_colours = len(target_palette)
-
+    if args.palette.upper() == "GB":
+        out_palette = gl_c.GAMENIPPER
+    elif args.palette.upper() == "ISS":
+        out_palette = gl_c.LOVE
+    elif args.palette.upper() == "AUTO":
+        out_palette = gl_c.hue_palette(comp_colours())
+    elif args.palette.upper() == "COMP":
+        out_palette = gl_c.hue_palette(comp_colours(c_min=-0.1, c_max=0.1))
+    elif args.palette.upper() == "WHITE":
+        out_palette = [(0, 0, 0)]
+        out_palette += gl_c.hue_palette((random.random(),), low=128)
+        out_palette.append((255, 255, 255))
+    elif args.palette.upper() == "MONO":
+        out_palette = gl_c.mono_palette(4)
+    else:
+        out_palette = gl_c.GAMENIPPER
+    num_colours = len(out_palette)
+    
     # Prequantize
-    image = quantize(image, mono_palette(8))
+    image = gl_c.quantize(image, gl_c.mono_palette(num_colours * 4))
 
-    # Create monochrome palette
-    colours = mono_palette(num_colours)
+    # Create monochrome palette for quantization
+    monos = gl_c.mono_palette(num_colours)
 
     # Dither image based on monochrome palette
-    dithim = bayer(image, colours, matrix=2).convert("RGB")
+    if args.dither.upper() == "FS":
+        dithim = gl_d.floyd_steinberg(image, monos, mode="MONO").convert("RGB")
+    elif args.dither.upper() == "BAYER":
+        dithim = gl_d.bayer(image, monos, matrix=2).convert("RGB")
+    else:
+        dithim = gl_d.bayer(image, monos, matrix=2).convert("RGB")
 
     # Replace colours in image with target palette
-    outim = replace_colours(dithim, colours, target_palette)
+    outim = gl_c.replace_colours(dithim, monos, out_palette)
 
     # Save dithered coloured image
-    outim.save("palette_test.png")
+    outim.save(args.outage)
 
 if __name__ == '__main__':
     main()
