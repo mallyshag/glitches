@@ -65,11 +65,24 @@ class Box(object):
         med_idx = len(self.colours) / 2
 
         # Create splits
-        return Box(self.colours[:med_idx]), Box(self.colours[med_idx:])
+        a = self.colours[:med_idx]
+        if len(a) > 0:
+            aa = Box(a)
+        else:
+            aa = None
+
+        b = self.colours[med_idx:]
+        if len(b) > 0:
+            bb = Box(b)
+        else:
+            bb = None
+
+        return aa, bb
 
 
 def get_colours(image):
     colours = image.getcolors(image.size[0] * image.size[1])
+    colours = sorted(colours, key=itemgetter(0), reverse=True)
     return [c[1] for c in colours]
 
 
@@ -91,13 +104,23 @@ def median_cut(image, num_colours):
                     longest_box = b
                     longest_dim = d
                     longest_size = size[d]
+        if longest_size <= 1:
+            break
 
         # Split longest dimension/box
         split_box = boxes[longest_box]
         a, b = split_box.split(longest_dim)
+        splits = []
+        if a is not None:
+            splits.append(a)
+        if b is not None:
+            splits.append(b)
+
+        if len(splits) == 0:
+            break
 
         # Replace split box
-        boxes = boxes[:longest_box] + [a, b] + boxes[longest_box+1:]
+        boxes = boxes[:longest_box] + splits + boxes[longest_box+1:]
 
     # Average colours
     colours = [x.avg for x in boxes]
